@@ -144,8 +144,15 @@ app.listen(PORT, async () => {
   if (process.env.DATABASE_URL) {
     try {
       await runMigrations();
+      console.log('[db] migraciones OK');
     } catch (err) {
-      console.error('[db] migraciones fallaron:', err.message);
+      console.error('[db] migraciones fallaron');
+      console.error('  message:', err.message || '(vacío)');
+      console.error('  code:   ', err.code || '(sin code)');
+      console.error('  errno:  ', err.errno || '(sin errno)');
+      console.error('  address:', err.address || '(sin address)');
+      console.error('  syscall:', err.syscall || '(sin syscall)');
+      if (err.cause) console.error('  cause:  ', err.cause);
     }
   } else {
     console.warn('[db] DATABASE_URL no configurada — la app no va a poder leer/escribir productos');
