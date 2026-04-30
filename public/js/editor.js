@@ -31,6 +31,44 @@ function escapeHtml(s) {
   }[m]));
 }
 
+// === Formato de precios ===
+//
+// USD: punto decimal, coma para miles  → "1,234.56"   (en-US)
+// VES: coma decimal, punto para miles  → "1.234,56"   (es-VE)
+//
+// El parse acepta ambos formatos (punto o coma como decimal) para que el
+// usuario pueda tipear "1500" o "1.500,00" o "1,500.00" sin pelearse con el
+// input. Devuelve número o null.
+
+function parsePrice(s, locale /* 'usd' | 'ves' */) {
+  if (s == null) return null;
+  let t = String(s).trim();
+  if (!t) return null;
+  if (locale === 'ves') {
+    // Locale es-VE: el punto es separador de miles, la coma es decimal.
+    t = t.replace(/\./g, '').replace(',', '.');
+  } else {
+    // Locale en-US: la coma es separador de miles, el punto es decimal.
+    t = t.replace(/,/g, '');
+  }
+  const n = parseFloat(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatUsd(n) {
+  if (n == null || !Number.isFinite(Number(n))) return '';
+  return Number(n).toLocaleString('en-US', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
+}
+
+function formatVes(n) {
+  if (n == null || !Number.isFinite(Number(n))) return '';
+  return Number(n).toLocaleString('es-VE', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
+}
+
 async function load() {
   try {
     const r = await fetch(`/api/products/${encodeURIComponent(slug)}`);
@@ -44,8 +82,8 @@ async function load() {
     }
     product = await r.json();
     titleInput.value = product.title || '';
-    priceUsdInput.value = product.price_usd ?? '';
-    priceVesInput.value = product.price_ves ?? '';
+    priceUsdInput.value = formatUsd(product.price_usd);
+    priceVesInput.value = formatVes(product.price_ves);
     slugInput.value = product.slug;
     descInput.value = product.description || '';
     renderVariants();
@@ -76,11 +114,11 @@ function getRate() {
 let vesIsAuto = false; // true cuando el valor en VES lo puso el cálculo, no el usuario.
 
 async function maybeAutofillVes() {
-  const usd = parseFloat(priceUsdInput.value);
+  const usd = parsePrice(priceUsdInput.value, 'usd');
   const vesRaw = priceVesInput.value.trim();
   // Si el usuario ya escribió algo en VES y no es nuestro auto-fill, respetar.
   if (vesRaw !== '' && !vesIsAuto) return;
-  if (!Number.isFinite(usd) || usd <= 0) {
+  if (usd == null || usd <= 0) {
     if (vesIsAuto) { priceVesInput.value = ''; }
     setVesHint('');
     return;
@@ -91,9 +129,9 @@ async function maybeAutofillVes() {
     return;
   }
   const calc = Number((usd * rate.rate).toFixed(2));
-  priceVesInput.value = calc.toFixed(2);
+  priceVesInput.value = formatVes(calc);
   vesIsAuto = true;
-  setVesHint(`auto · Bs. ${rate.rate} / USD`);
+  setVesHint(`auto · Bs. ${formatVes(rate.rate)} / USD`);
 }
 
 function setVesHint(text) {
@@ -109,14 +147,24 @@ function setVesHint(text) {
 
 // Recalcular VES cuando cambia USD.
 priceUsdInput.addEventListener('input', maybeAutofillVes);
+// Reformatear USD al perder foco (deja "1500" → "1,500.00").
+priceUsdInput.addEventListener('blur', () => {
+  const n = parsePrice(priceUsdInput.value, 'usd');
+  priceUsdInput.value = n != null ? formatUsd(n) : '';
+});
 // Si el usuario tipea en VES, salimos del modo auto.
 priceVesInput.addEventListener('input', () => {
   vesIsAuto = false;
   setVesHint('');
 });
-// Si el usuario vacía VES, volvemos al auto.
+// Reformatear VES al perder foco; si quedó vacío, recalculamos auto.
 priceVesInput.addEventListener('blur', () => {
-  if (priceVesInput.value.trim() === '') maybeAutofillVes();
+  if (priceVesInput.value.trim() === '') {
+    maybeAutofillVes();
+    return;
+  }
+  const n = parsePrice(priceVesInput.value, 'ves');
+  priceVesInput.value = n != null ? formatVes(n) : '';
 });
 
 // Devuelve el elemento <img>/<video>/<audio> según content_type del media.
@@ -201,8 +249,8 @@ $('btn-save').addEventListener('click', async () => {
       body: JSON.stringify({
         title: titleInput.value.trim(),
         description: descInput.value,
-        price_usd: priceUsdInput.value ? parseFloat(priceUsdInput.value) : null,
-        price_ves: priceVesInput.value ? parseFloat(priceVesInput.value) : null,
+        price_usd: parsePrice(priceUsdInput.value, 'usd'),
+        price_ves: parsePrice(priceVesInput.value, 'ves'),
       }),
     });
     if (!r.ok) {
