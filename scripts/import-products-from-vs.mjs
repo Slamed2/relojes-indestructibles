@@ -1,6 +1,6 @@
 // Importa productos desde el Vector Store a la tabla `products`.
 // Solo procesa archivos con prefijo `productos__`. El resto de los archivos
-// del VS (bot, chatrace, difusiones, seguimientos) NO se tocan.
+// del VS (bot, difusiones, seguimientos, etc.) NO se tocan.
 //
 // Uso:
 //   node --env-file=.env scripts/import-products-from-vs.mjs

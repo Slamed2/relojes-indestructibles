@@ -61,7 +61,7 @@ function parseCookies(header) {
 app.use('/imagenes', imagenesRouter);
 app.use('/thumb', thumbsRouter);
 
-// Endpoints públicos para el agente IA / Chatrace.
+// Endpoints públicos para el agente IA externo.
 app.get('/api/stories/:id/text', publicGetStoryText);
 app.put('/api/stories/:id/text', publicPutStoryText);
 app.get('/api/stories/:id/media', publicGetStoryMedia);

@@ -6,8 +6,8 @@
 //   DELETE /api/stories/:id/text     → borra texto (admin)
 //
 // Los endpoints de admin se montan dentro del middleware de auth en server.js.
-// El endpoint público (GET /:id/text) se monta antes del auth así Chatrace
-// puede consultarlo sin cookie.
+// El endpoint público (GET /:id/text) se monta antes del auth para que el
+// agente externo pueda consultarlo sin cookie.
 
 import express from 'express';
 import { getSql } from '../services/db.js';
