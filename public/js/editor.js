@@ -59,34 +59,47 @@ async function load() {
 function mediaPreview(m) {
   const ct = m.content_type || '';
   if (ct.startsWith('video/')) {
-    return `<video src="${escapeHtml(m.url)}" preload="metadata" muted></video>`;
+    return `<video src="${escapeHtml(m.url)}" preload="metadata" muted controls></video>`;
   }
   if (ct.startsWith('audio/')) {
-    return `<audio src="${escapeHtml(m.url)}" preload="metadata" controls style="width:100%;height:100%;"></audio>`;
+    return `<audio src="${escapeHtml(m.url)}" preload="metadata" controls></audio>`;
   }
   return `<img src="${escapeHtml(m.url)}" alt="" loading="lazy" />`;
+}
+
+// HTML completo de un tile (preview + botón borrar + textarea con autosave).
+function tileHtml(m) {
+  return `
+    <div class="image-tile" data-id="${m.id}" title="${escapeHtml(m.filename)}">
+      <div class="media-frame">
+        ${mediaPreview(m)}
+        <button class="delete" data-id="${m.id}" title="Borrar">×</button>
+      </div>
+      <textarea class="caption" data-id="${m.id}"
+        placeholder="Descripción de este ${captionKind(m)} (opcional)…"
+      >${escapeHtml(m.description || '')}</textarea>
+      <span class="caption-status" data-id="${m.id}" hidden></span>
+    </div>
+  `;
+}
+
+function captionKind(m) {
+  const ct = m.content_type || '';
+  if (ct.startsWith('video/')) return 'video';
+  if (ct.startsWith('audio/')) return 'audio';
+  return 'imagen';
 }
 
 function renderImages() {
   // Media "general" (variant_id null) — incluye imagen, video y audio.
   const general = product.media.filter((m) => !m.variant_id);
-  imagesGeneralEl.innerHTML = general.map((m) => `
-    <div class="image-tile" data-id="${m.id}" title="${escapeHtml(m.filename)}">
-      ${mediaPreview(m)}
-      <button class="delete" data-id="${m.id}" title="Borrar">×</button>
-    </div>
-  `).join('');
+  imagesGeneralEl.innerHTML = general.map(tileHtml).join('');
 }
 
 function renderVariants() {
   variantsEl.innerHTML = product.variants.map((v) => {
     const variantImages = product.media.filter((m) => m.variant_id === v.id);
-    const imagesHtml = variantImages.map((m) => `
-      <div class="image-tile" data-id="${m.id}" title="${escapeHtml(m.filename)}">
-        ${mediaPreview(m)}
-        <button class="delete" data-id="${m.id}" title="Borrar">×</button>
-      </div>
-    `).join('');
+    const imagesHtml = variantImages.map(tileHtml).join('');
     return `
       <div class="variant-card" data-variant-id="${v.id}">
         <div class="field">
@@ -229,5 +242,64 @@ $('upload-general').addEventListener('change', async (ev) => {
   if (r.ok) await load();
   else showToast('Error al subir', true);
 });
+
+// === Captions: autosave de la descripción de cada media al perder foco ===
+
+const captionDirty = new WeakMap(); // textarea → último valor guardado
+
+function setCaptionStatus(id, text, type) {
+  const el = document.querySelector(`.caption-status[data-id="${id}"]`);
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = 'caption-status' + (type ? ' ' + type : '');
+  el.hidden = !text;
+}
+
+async function saveCaption(textarea) {
+  const id = textarea.dataset.id;
+  const value = textarea.value.trim();
+  // Si no cambió desde el último save, no hacemos nada.
+  if (captionDirty.get(textarea) === value) return;
+
+  setCaptionStatus(id, 'guardando…');
+  try {
+    const r = await fetch(`/api/products/${encodeURIComponent(slug)}/images/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: value }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.error || 'error');
+    }
+    captionDirty.set(textarea, value);
+    // También actualizo el estado en memoria para que un re-render no pierda el valor.
+    const m = product.media.find((x) => x.id === parseInt(id, 10));
+    if (m) m.description = value;
+    setCaptionStatus(id, '✓', 'saved');
+    setTimeout(() => setCaptionStatus(id, ''), 1500);
+  } catch (err) {
+    setCaptionStatus(id, err.message, 'err');
+  }
+}
+
+function bindCaptionAutosave(rootEl) {
+  // focusout burbujea (a diferencia de blur).
+  rootEl.addEventListener('focusout', (ev) => {
+    if (!ev.target.matches('.caption')) return;
+    saveCaption(ev.target);
+  });
+  // Cmd/Ctrl+Enter dentro del textarea = forzar guardado y salir del foco.
+  rootEl.addEventListener('keydown', (ev) => {
+    if (!ev.target.matches('.caption')) return;
+    if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+      ev.preventDefault();
+      ev.target.blur();
+    }
+  });
+}
+
+bindCaptionAutosave(imagesGeneralEl);
+bindCaptionAutosave(variantsEl);
 
 load();

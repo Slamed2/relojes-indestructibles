@@ -33,6 +33,7 @@ import {
   RESERVED_SLUGS,
 } from '../services/products.js';
 import { getSql } from '../services/db.js';
+import { getLatestRate, fetchAndStoreUsdRate } from '../services/exchange-rate.js';
 
 const router = express.Router();
 
@@ -50,6 +51,44 @@ const EXT_TO_MIME = {
   '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
 };
 const ALLOWED_EXT_RE = /\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|mp3|ogg|wav|m4a)$/i;
+
+// === Tasa de cambio USD → VES ===
+//
+// GET  /api/products/exchange-rate         → última tasa cacheada
+// POST /api/products/exchange-rate/refresh → forzar fetch ahora
+//
+// Nota: estas rutas se declaran ANTES de "/:slug" para que no las capture el
+// param dinámico.
+router.get('/exchange-rate', async (_req, res) => {
+  try {
+    const r = await getLatestRate();
+    if (!r) return res.status(404).json({ error: 'sin tasa cacheada todavía' });
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/exchange-rate/refresh', async (_req, res) => {
+  try {
+    const r = await fetchAndStoreUsdRate();
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Calcula price_ves a partir de price_usd usando la última tasa.
+// Solo aplica si hay USD pero no VES (o VES nulo). Si no hay tasa, deja null.
+async function autoFillVes({ price_usd, price_ves }) {
+  if (price_usd == null || price_usd === '') return { price_usd, price_ves };
+  if (price_ves != null && price_ves !== '') return { price_usd, price_ves };
+  const r = await getLatestRate();
+  if (!r) return { price_usd, price_ves: null };
+  const usdNum = Number(price_usd);
+  if (!Number.isFinite(usdNum)) return { price_usd, price_ves: null };
+  return { price_usd, price_ves: Number((usdNum * r.rate).toFixed(2)) };
+}
 
 // === Listado ===
 router.get('/', async (_req, res) => {
@@ -90,7 +129,7 @@ router.get('/:slug', async (req, res) => {
     const variants = await listVariants(slug);
     const sql = getSql();
     const media = await sql`
-      SELECT id, filename, content_type, variant_id, display_order, uploaded_at
+      SELECT id, filename, content_type, variant_id, display_order, description, uploaded_at
       FROM product_media
       WHERE product_slug = ${slug}
       ORDER BY display_order, id
@@ -102,6 +141,7 @@ router.get('/:slug', async (req, res) => {
       content_type: m.content_type,
       variant_id: m.variant_id,
       display_order: m.display_order,
+      description: m.description || '',
       uploaded_at: m.uploaded_at,
       url: `${base}/imagenes/${slug}/${m.filename}`,
     }));
@@ -124,11 +164,12 @@ router.post('/', async (req, res) => {
     const existing = await readProduct(slug);
     if (existing) return res.status(409).json({ error: 'ya existe' });
 
+    const filled = await autoFillVes({ price_usd, price_ves });
     await upsertProduct(slug, {
       title,
       description: description || '',
-      price_usd: price_usd ?? null,
-      price_ves: price_ves ?? null,
+      price_usd: filled.price_usd ?? null,
+      price_ves: filled.price_ves ?? null,
     });
 
     // Auto-sync al VS (no bloquea respuesta si falla).
@@ -152,11 +193,20 @@ router.put('/:slug', async (req, res) => {
     if (!product) return res.status(404).json({ error: 'No existe' });
 
     const { title, description, price_usd, price_ves } = req.body || {};
+    const nextUsd = price_usd !== undefined ? price_usd : product.price_usd;
+    let nextVes = price_ves !== undefined ? price_ves : product.price_ves;
+
+    // Si el cliente cambió USD pero no mandó VES, recalculamos VES con la tasa.
+    if (price_usd !== undefined && price_ves === undefined) {
+      const filled = await autoFillVes({ price_usd: nextUsd, price_ves: null });
+      nextVes = filled.price_ves;
+    }
+
     await upsertProduct(slug, {
       title: title ?? product.title,
       description: description ?? product.description,
-      price_usd: price_usd !== undefined ? price_usd : product.price_usd,
-      price_ves: price_ves !== undefined ? price_ves : product.price_ves,
+      price_usd: nextUsd,
+      price_ves: nextVes,
     });
 
     const [productRes, indexRes] = await Promise.allSettled([
@@ -250,6 +300,7 @@ router.post('/:slug/images', upload.single('image'), async (req, res) => {
     if (!product) return res.status(404).json({ error: 'producto no existe' });
 
     const variantId = req.body.variant_id ? parseInt(req.body.variant_id, 10) : null;
+    const description = (req.body.description || '').trim();
 
     // Validar y deducir extensión.
     const extMatch = req.file.originalname.match(ALLOWED_EXT_RE);
@@ -281,20 +332,46 @@ router.post('/:slug/images', upload.single('image'), async (req, res) => {
     }
     const filename = `${prefix}${n}${ext}`;
 
-    await sql`
-      INSERT INTO product_media (product_slug, variant_id, filename, content_type, data, display_order, uploaded_at)
-      VALUES (${slug}, ${variantId}, ${filename}, ${contentType}, ${req.file.buffer}, ${n}, now())
+    const [inserted] = await sql`
+      INSERT INTO product_media (product_slug, variant_id, filename, content_type, data, display_order, description, uploaded_at)
+      VALUES (${slug}, ${variantId}, ${filename}, ${contentType}, ${req.file.buffer}, ${n}, ${description}, now())
+      RETURNING id
     `;
 
     syncProductFile(slug).catch((err) => console.error('sync product:', err.message));
 
     const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
     res.json({
+      id: inserted.id,
       filename,
       content_type: contentType,
       kind: prefix, // imagen | video | audio
+      description,
       url: `${base}/imagenes/${slug}/${filename}`,
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Editar metadata de un media (solo description por ahora). El binario no se toca.
+router.patch('/:slug/images/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { description } = req.body || {};
+    if (typeof description !== 'string') {
+      return res.status(400).json({ error: 'description (string) requerido' });
+    }
+    const sql = getSql();
+    const [row] = await sql`
+      UPDATE product_media
+      SET description = ${description.trim()}
+      WHERE id = ${id} AND product_slug = ${req.params.slug}
+      RETURNING id, description
+    `;
+    if (!row) return res.status(404).json({ error: 'media no existe' });
+    syncProductFile(req.params.slug).catch((err) => console.error('sync product:', err.message));
+    res.json(row);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

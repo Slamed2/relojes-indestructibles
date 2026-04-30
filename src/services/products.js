@@ -172,13 +172,34 @@ export async function buildProductMd(slug) {
   const variants = await listVariants(slug);
   const sql = getSql();
   const media = await sql`
-    SELECT id, filename, variant_id FROM product_media
+    SELECT id, filename, content_type, variant_id, description FROM product_media
     WHERE product_slug = ${slug}
     ORDER BY display_order, id
   `;
 
   const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
-  const imageUrl = (filename) => `${base}/imagenes/${slug}/${filename}`;
+  const mediaUrl = (filename) => `${base}/imagenes/${slug}/${filename}`;
+
+  // Devuelve el "kind" estable basado en content_type.
+  const kindOf = (m) => {
+    const ct = m.content_type || '';
+    if (ct.startsWith('video/')) return 'video';
+    if (ct.startsWith('audio/')) return 'audio';
+    return 'imagen';
+  };
+  // Etiqueta canónica para el agente: IMAGEN_DE / VIDEO_DE / AUDIO_DE.
+  const labelOf = (m) => kindOf(m).toUpperCase() + '_DE';
+
+  // Lista plana → líneas con caption opcional. El caption va después de "—".
+  const renderMediaList = (items, ownerName) => {
+    const out = [];
+    for (const m of items) {
+      const cap = (m.description || '').trim().replace(/\s+/g, ' ');
+      const tail = cap ? ` — ${cap}` : '';
+      out.push(`- ${labelOf(m)} "${ownerName}" → ${mediaUrl(m.filename)}${tail}`);
+    }
+    return out;
+  };
 
   const lines = [`### ${product.title}`, ''];
 
@@ -194,14 +215,21 @@ export async function buildProductMd(slug) {
     lines.push(`**Precio:** ${priceParts.join(' · ')}`, '');
   }
 
-  // Imágenes generales del producto.
-  const generalImages = media.filter((m) => !m.variant_id);
-  if (generalImages.length) {
-    lines.push('**Imágenes:**', '');
-    for (const m of generalImages) {
-      lines.push(`- IMAGEN_DE "${product.title}" → ${imageUrl(m.filename)}`);
-    }
-    lines.push('');
+  // Media general del producto (sin variante).
+  const generalMedia = media.filter((m) => !m.variant_id);
+  const byKind = {
+    imagen: generalMedia.filter((m) => kindOf(m) === 'imagen'),
+    video:  generalMedia.filter((m) => kindOf(m) === 'video'),
+    audio:  generalMedia.filter((m) => kindOf(m) === 'audio'),
+  };
+  if (byKind.imagen.length) {
+    lines.push('**Imágenes:**', '', ...renderMediaList(byKind.imagen, product.title), '');
+  }
+  if (byKind.video.length) {
+    lines.push('**Videos:**', '', ...renderMediaList(byKind.video, product.title), '');
+  }
+  if (byKind.audio.length) {
+    lines.push('**Audios:**', '', ...renderMediaList(byKind.audio, product.title), '');
   }
 
   // Variantes.
@@ -210,12 +238,9 @@ export async function buildProductMd(slug) {
     if (v.description?.trim()) {
       lines.push(v.description.trim(), '');
     }
-    const vImages = media.filter((m) => m.variant_id === v.id);
-    if (vImages.length) {
-      for (const m of vImages) {
-        lines.push(`- IMAGEN_DE "${v.name}" → ${imageUrl(m.filename)}`);
-      }
-      lines.push('');
+    const vMedia = media.filter((m) => m.variant_id === v.id);
+    if (vMedia.length) {
+      lines.push(...renderMediaList(vMedia, v.name), '');
     }
   }
 

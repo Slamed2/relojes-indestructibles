@@ -10,6 +10,7 @@ import usageRouter from './src/routes/usage.js';
 import storiesRouter, { publicGetStoryText, publicPutStoryText, publicGetStoryMedia } from './src/routes/stories.js';
 import postsRouter, { publicGetPostText, publicPutPostText, publicGetPostMedia } from './src/routes/posts.js';
 import { runMigrations } from './src/services/db.js';
+import { startRefreshLoop } from './src/services/exchange-rate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -145,6 +146,8 @@ app.listen(PORT, async () => {
     try {
       await runMigrations();
       console.log('[db] migraciones OK');
+      // Arrancar el loop de refresh de tasa USD→VES (no bloquea boot).
+      startRefreshLoop();
     } catch (err) {
       console.error('[db] migraciones fallaron');
       console.error('  message:', err.message || '(vacío)');
