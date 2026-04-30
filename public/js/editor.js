@@ -57,8 +57,12 @@ function parsePrice(s, locale /* 'usd' | 'ves' */) {
 
 function formatUsd(n) {
   if (n == null || !Number.isFinite(Number(n))) return '';
-  return Number(n).toLocaleString('en-US', {
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  const num = Number(n);
+  // Si es un entero exacto (centavos == 0), sin decimales; si no, 2 decimales.
+  const isWhole = Math.round(num * 100) === Math.round(num) * 100;
+  return num.toLocaleString('en-US', {
+    minimumFractionDigits: isWhole ? 0 : 2,
+    maximumFractionDigits: 2,
   });
 }
 

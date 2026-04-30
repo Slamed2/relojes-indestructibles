@@ -248,7 +248,13 @@ export async function buildProductMd(slug) {
 }
 
 function formatUsd(n) {
-  return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const num = Number(n);
+  // Si es entero (centavos == 0), sin decimales; si no, 2.
+  const isWhole = Math.round(num * 100) === Math.round(num) * 100;
+  return num.toLocaleString('en-US', {
+    minimumFractionDigits: isWhole ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
 }
 function formatVes(n) {
   return Number(n).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

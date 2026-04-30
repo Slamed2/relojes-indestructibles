@@ -24,8 +24,18 @@ function escapeHtml(s) {
 
 function fmtPrices(p) {
   const parts = [];
-  if (p.price_usd != null) parts.push('USD $' + Number(p.price_usd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-  if (p.price_ves != null) parts.push('Bs. ' + Number(p.price_ves).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  if (p.price_usd != null) {
+    const n = Number(p.price_usd);
+    const isWhole = Math.round(n * 100) === Math.round(n) * 100;
+    parts.push('USD $' + n.toLocaleString('en-US', {
+      minimumFractionDigits: isWhole ? 0 : 2, maximumFractionDigits: 2,
+    }));
+  }
+  if (p.price_ves != null) {
+    parts.push('Bs. ' + Number(p.price_ves).toLocaleString('es-VE', {
+      minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }));
+  }
   return parts.join(' · ');
 }
 
