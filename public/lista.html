@@ -72,10 +72,11 @@
             '',
           ];
           for (const p of data.products) {
-            const price = p.price != null
-              ? ' — $' + Number(p.price).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-              : '';
-            lines.push(`- ${p.title}${price}`);
+            const parts = [];
+            if (p.price_usd != null) parts.push('USD $' + Number(p.price_usd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+            if (p.price_ves != null) parts.push('Bs. ' + Number(p.price_ves).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+            const priceTxt = parts.length ? ' — ' + parts.join(' · ') : '';
+            lines.push(`- ${p.title}${priceTxt}`);
           }
           lines.push('', `**Total:** ${data.total} producto${data.total === 1 ? '' : 's'}`, '');
           rawMd = lines.join('\n');

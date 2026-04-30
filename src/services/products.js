@@ -56,7 +56,8 @@ export async function readProduct(slug) {
     slug: row.slug,
     title: row.title,
     description: row.description || '',
-    price: row.price != null ? Number(row.price) : null,
+    price_usd: row.price_usd != null ? Number(row.price_usd) : null,
+    price_ves: row.price_ves != null ? Number(row.price_ves) : null,
     openai_file_id: row.openai_file_id,
     display_order: row.display_order,
     created_at: row.created_at?.toISOString?.() || row.created_at,
@@ -67,7 +68,7 @@ export async function readProduct(slug) {
 export async function listProducts() {
   const sql = getSql();
   const rows = await sql`
-    SELECT slug, title, description, price, openai_file_id, display_order, created_at, updated_at
+    SELECT slug, title, description, price_usd, price_ves, openai_file_id, display_order, created_at, updated_at
     FROM products
     ORDER BY (display_order IS NULL), display_order ASC, slug ASC
   `;
@@ -75,7 +76,8 @@ export async function listProducts() {
     slug: r.slug,
     title: r.title,
     description: r.description || '',
-    price: r.price != null ? Number(r.price) : null,
+    price_usd: r.price_usd != null ? Number(r.price_usd) : null,
+    price_ves: r.price_ves != null ? Number(r.price_ves) : null,
     openai_file_id: r.openai_file_id,
     display_order: r.display_order,
     created_at: r.created_at?.toISOString?.() || r.created_at,
@@ -86,12 +88,13 @@ export async function listProducts() {
 export async function upsertProduct(slug, data) {
   const sql = getSql();
   await sql`
-    INSERT INTO products (slug, title, description, price, openai_file_id, created_at, updated_at)
+    INSERT INTO products (slug, title, description, price_usd, price_ves, openai_file_id, created_at, updated_at)
     VALUES (
       ${slug},
       ${data.title || slug},
       ${data.description ?? ''},
-      ${data.price ?? null},
+      ${data.price_usd ?? null},
+      ${data.price_ves ?? null},
       ${data.openai_file_id ?? null},
       ${data.created_at || new Date().toISOString()},
       now()
@@ -99,7 +102,8 @@ export async function upsertProduct(slug, data) {
     ON CONFLICT (slug) DO UPDATE SET
       title = EXCLUDED.title,
       description = EXCLUDED.description,
-      price = EXCLUDED.price,
+      price_usd = EXCLUDED.price_usd,
+      price_ves = EXCLUDED.price_ves,
       openai_file_id = COALESCE(EXCLUDED.openai_file_id, products.openai_file_id),
       updated_at = now()
   `;
@@ -182,8 +186,12 @@ export async function buildProductMd(slug) {
     lines.push(product.description.trim(), '');
   }
 
-  if (product.price != null) {
-    lines.push(`**Precio:** $${formatAr(product.price)}`, '');
+  // Precios duales (cualquiera puede ser null).
+  const priceParts = [];
+  if (product.price_usd != null) priceParts.push(`USD $${formatUsd(product.price_usd)}`);
+  if (product.price_ves != null) priceParts.push(`Bs. ${formatVes(product.price_ves)}`);
+  if (priceParts.length) {
+    lines.push(`**Precio:** ${priceParts.join(' · ')}`, '');
   }
 
   // Imágenes generales del producto.
@@ -214,8 +222,11 @@ export async function buildProductMd(slug) {
   return lines.join('\n').trim() + '\n';
 }
 
-function formatAr(n) {
-  return Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function formatUsd(n) {
+  return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function formatVes(n) {
+  return Number(n).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // Sube/actualiza el archivo del producto en el VS.
@@ -254,7 +265,10 @@ export async function buildIndexMd() {
     '',
   ];
   for (const p of products) {
-    const priceTxt = p.price != null ? ` — $${formatAr(p.price)}` : '';
+    const parts = [];
+    if (p.price_usd != null) parts.push(`USD $${formatUsd(p.price_usd)}`);
+    if (p.price_ves != null) parts.push(`Bs. ${formatVes(p.price_ves)}`);
+    const priceTxt = parts.length ? ` — ${parts.join(' · ')}` : '';
     lines.push(`- ${p.title}${priceTxt}`);
   }
   lines.push('', `**Total:** ${products.length} producto${products.length === 1 ? '' : 's'}.`, '');

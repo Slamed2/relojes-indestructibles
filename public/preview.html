@@ -117,9 +117,11 @@
         }[m]));
       }
 
-      function fmtPrice(p) {
-        if (p == null) return '';
-        return '$' + Number(p).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      function fmtPrices(p) {
+        const parts = [];
+        if (p.price_usd != null) parts.push('USD $' + Number(p.price_usd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        if (p.price_ves != null) parts.push('Bs. ' + Number(p.price_ves).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+        return parts.join(' · ');
       }
 
       function normalize(s) {
@@ -148,7 +150,7 @@
             <div class="product-header">
               <span class="chev"></span>
               <span class="product-title">${escapeHtml(p.title)}</span>
-              <span class="product-price">${fmtPrice(p.price)}</span>
+              <span class="product-price">${fmtPrices(p)}</span>
             </div>
             <div class="product-body">
               ${p.description ? `<div class="desc">${escapeHtml(p.description)}</div>` : ''}

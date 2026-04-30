@@ -22,9 +22,11 @@ function escapeHtml(s) {
   }[m]));
 }
 
-function fmtPrice(price) {
-  if (price == null) return '';
-  return '$' + Number(price).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function fmtPrices(p) {
+  const parts = [];
+  if (p.price_usd != null) parts.push('USD $' + Number(p.price_usd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  if (p.price_ves != null) parts.push('Bs. ' + Number(p.price_ves).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  return parts.join(' · ');
 }
 
 // Convierte URLs de /imagenes/<slug>/<file> a su versión thumb si es del mismo origen.
@@ -56,11 +58,12 @@ function renderGrid(products) {
     const img = p.image
       ? `<img src="${toThumbUrl(p.image, 480)}" alt="" loading="lazy" decoding="async" />`
       : '<span>Sin imagen</span>';
+    const priceTxt = fmtPrices(p) || (p.updated_at ? new Date(p.updated_at).toLocaleString() : '');
     card.innerHTML = `
       <div class="card-img">${img}</div>
       <div class="card-body">
         <h3>${escapeHtml(p.title)}</h3>
-        <small>${fmtPrice(p.price) || (p.updated_at ? new Date(p.updated_at).toLocaleString() : '')}</small>
+        <small>${priceTxt}</small>
       </div>`;
     grid.appendChild(card);
   }

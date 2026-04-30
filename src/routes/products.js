@@ -38,8 +38,18 @@ const router = express.Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  // 100 MB para soportar videos cortos. Si necesitás más, subir el límite acá.
+  limits: { fileSize: 100 * 1024 * 1024 },
 });
+
+// Mapeo de extensiones a MIME types soportados (imágenes + audio + video).
+const EXT_TO_MIME = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+  '.webp': 'image/webp', '.gif': 'image/gif',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+  '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
+};
+const ALLOWED_EXT_RE = /\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|mp3|ogg|wav|m4a)$/i;
 
 // === Listado ===
 router.get('/', async (_req, res) => {
@@ -59,7 +69,8 @@ router.get('/', async (_req, res) => {
     const out = products.map((p) => ({
       slug: p.slug,
       title: p.title,
-      price: p.price,
+      price_usd: p.price_usd,
+      price_ves: p.price_ves,
       updated_at: p.updated_at,
       image: previewMap.has(p.slug) ? `${base}/imagenes/${p.slug}/${previewMap.get(p.slug)}` : null,
     }));
@@ -103,7 +114,7 @@ router.get('/:slug', async (req, res) => {
 // === Crear ===
 router.post('/', async (req, res) => {
   try {
-    const { title, description, price } = req.body || {};
+    const { title, description, price_usd, price_ves } = req.body || {};
     if (!title) return res.status(400).json({ error: 'title requerido' });
     const slug = makeSlug(title);
     if (!slug) return res.status(400).json({ error: 'title inválido' });
@@ -113,7 +124,12 @@ router.post('/', async (req, res) => {
     const existing = await readProduct(slug);
     if (existing) return res.status(409).json({ error: 'ya existe' });
 
-    await upsertProduct(slug, { title, description: description || '', price: price ?? null });
+    await upsertProduct(slug, {
+      title,
+      description: description || '',
+      price_usd: price_usd ?? null,
+      price_ves: price_ves ?? null,
+    });
 
     // Auto-sync al VS (no bloquea respuesta si falla).
     Promise.allSettled([syncProductFile(slug), syncIndexFile()]).then((results) => {
@@ -135,11 +151,12 @@ router.put('/:slug', async (req, res) => {
     const product = await readProduct(slug);
     if (!product) return res.status(404).json({ error: 'No existe' });
 
-    const { title, description, price } = req.body || {};
+    const { title, description, price_usd, price_ves } = req.body || {};
     await upsertProduct(slug, {
       title: title ?? product.title,
       description: description ?? product.description,
-      price: price !== undefined ? price : product.price,
+      price_usd: price_usd !== undefined ? price_usd : product.price_usd,
+      price_ves: price_ves !== undefined ? price_ves : product.price_ves,
     });
 
     const [productRes, indexRes] = await Promise.allSettled([
@@ -220,36 +237,49 @@ router.delete('/:slug/variants/:id', async (req, res) => {
   }
 });
 
-// === Imágenes ===
+// === Media (imágenes, video, audio) ===
+//
+// Acepta: jpg, jpeg, png, webp, gif, mp4, webm, mov, mp3, ogg, wav, m4a.
+// El path POST /:slug/images se mantiene por compat (el frontend manda con
+// el nombre "image"), pero realmente acepta cualquier media.
 router.post('/:slug/images', upload.single('image'), async (req, res) => {
   try {
     const { slug } = req.params;
-    if (!req.file) return res.status(400).json({ error: 'image requerida' });
+    if (!req.file) return res.status(400).json({ error: 'archivo requerido' });
     const product = await readProduct(slug);
     if (!product) return res.status(404).json({ error: 'producto no existe' });
 
     const variantId = req.body.variant_id ? parseInt(req.body.variant_id, 10) : null;
-    const ext = (req.file.originalname.match(/\.(jpg|jpeg|png|webp|gif)$/i) || ['.jpg'])[0].toLowerCase();
-    const contentType = req.file.mimetype || (
-      ext === '.png' ? 'image/png' :
-      ext === '.webp' ? 'image/webp' :
-      ext === '.gif' ? 'image/gif' :
-      'image/jpeg'
-    );
+
+    // Validar y deducir extensión.
+    const extMatch = req.file.originalname.match(ALLOWED_EXT_RE);
+    if (!extMatch) {
+      return res.status(400).json({
+        error: 'tipo de archivo no soportado. Permitidos: ' + Object.keys(EXT_TO_MIME).join(', '),
+      });
+    }
+    const ext = extMatch[0].toLowerCase();
+    const contentType = req.file.mimetype || EXT_TO_MIME[ext] || 'application/octet-stream';
+
+    // Decidir el prefijo del nombre según el tipo (imagenN, videoN, audioN).
+    let prefix = 'imagen';
+    if (contentType.startsWith('video/')) prefix = 'video';
+    else if (contentType.startsWith('audio/')) prefix = 'audio';
 
     const sql = getSql();
 
-    // Próximo índice por slug.
+    // Próximo índice por slug + prefijo (imagenes, videos y audios cuentan separados).
     const existing = await sql`SELECT filename FROM product_media WHERE product_slug = ${slug}`;
+    const re = new RegExp(`^${prefix}(\\d+)\\.`, 'i');
     let n = 1;
     if (existing.length) {
       const used = existing
-        .map((r) => (r.filename.match(/^imagen(\d+)\./i) || [])[1])
+        .map((r) => (r.filename.match(re) || [])[1])
         .filter(Boolean)
         .map((s) => parseInt(s, 10));
       if (used.length) n = Math.max(...used) + 1;
     }
-    const filename = `imagen${n}${ext}`;
+    const filename = `${prefix}${n}${ext}`;
 
     await sql`
       INSERT INTO product_media (product_slug, variant_id, filename, content_type, data, display_order, uploaded_at)
@@ -259,7 +289,12 @@ router.post('/:slug/images', upload.single('image'), async (req, res) => {
     syncProductFile(slug).catch((err) => console.error('sync product:', err.message));
 
     const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
-    res.json({ filename, url: `${base}/imagenes/${slug}/${filename}` });
+    res.json({
+      filename,
+      content_type: contentType,
+      kind: prefix, // imagen | video | audio
+      url: `${base}/imagenes/${slug}/${filename}`,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -2,7 +2,8 @@ const slug = decodeURIComponent(location.pathname.split('/').pop());
 const $ = (id) => document.getElementById(id);
 
 const titleInput = $('title');
-const priceInput = $('price');
+const priceUsdInput = $('price_usd');
+const priceVesInput = $('price_ves');
 const slugInput = $('slug');
 const descInput = $('description');
 const variantsEl = $('variants');
@@ -43,7 +44,8 @@ async function load() {
     }
     product = await r.json();
     titleInput.value = product.title || '';
-    priceInput.value = product.price ?? '';
+    priceUsdInput.value = product.price_usd ?? '';
+    priceVesInput.value = product.price_ves ?? '';
     slugInput.value = product.slug;
     descInput.value = product.description || '';
     renderVariants();
@@ -53,13 +55,25 @@ async function load() {
   }
 }
 
+// Devuelve el elemento <img>/<video>/<audio> según content_type del media.
+function mediaPreview(m) {
+  const ct = m.content_type || '';
+  if (ct.startsWith('video/')) {
+    return `<video src="${escapeHtml(m.url)}" preload="metadata" muted></video>`;
+  }
+  if (ct.startsWith('audio/')) {
+    return `<audio src="${escapeHtml(m.url)}" preload="metadata" controls style="width:100%;height:100%;"></audio>`;
+  }
+  return `<img src="${escapeHtml(m.url)}" alt="" loading="lazy" />`;
+}
+
 function renderImages() {
-  // Imágenes "generales" (variant_id null)
+  // Media "general" (variant_id null) — incluye imagen, video y audio.
   const general = product.media.filter((m) => !m.variant_id);
-  imagesGeneralEl.innerHTML = general.map((img) => `
-    <div class="image-tile" data-id="${img.id}">
-      <img src="${escapeHtml(img.url)}" alt="" loading="lazy" />
-      <button class="delete" data-id="${img.id}" title="Borrar">×</button>
+  imagesGeneralEl.innerHTML = general.map((m) => `
+    <div class="image-tile" data-id="${m.id}" title="${escapeHtml(m.filename)}">
+      ${mediaPreview(m)}
+      <button class="delete" data-id="${m.id}" title="Borrar">×</button>
     </div>
   `).join('');
 }
@@ -67,10 +81,10 @@ function renderImages() {
 function renderVariants() {
   variantsEl.innerHTML = product.variants.map((v) => {
     const variantImages = product.media.filter((m) => m.variant_id === v.id);
-    const imagesHtml = variantImages.map((img) => `
-      <div class="image-tile" data-id="${img.id}">
-        <img src="${escapeHtml(img.url)}" alt="" loading="lazy" />
-        <button class="delete" data-id="${img.id}" title="Borrar">×</button>
+    const imagesHtml = variantImages.map((m) => `
+      <div class="image-tile" data-id="${m.id}" title="${escapeHtml(m.filename)}">
+        ${mediaPreview(m)}
+        <button class="delete" data-id="${m.id}" title="Borrar">×</button>
       </div>
     `).join('');
     return `
@@ -87,8 +101,8 @@ function renderVariants() {
           <label style="font-size:12px;color:var(--muted);">Imágenes de esta variante</label>
           <div class="images-grid" style="margin-top:6px;">${imagesHtml}</div>
           <label class="upload-tile" style="margin-top:6px; height:50px; aspect-ratio:auto;">
-            + Subir imagen para "${escapeHtml(v.name)}"
-            <input type="file" class="upload-variant" data-variant-id="${v.id}" accept="image/*" />
+            + Subir media para "${escapeHtml(v.name)}"
+            <input type="file" class="upload-variant" data-variant-id="${v.id}" accept="image/*,video/*,audio/*" />
           </label>
         </div>
         <div class="variant-actions">
@@ -110,7 +124,8 @@ $('btn-save').addEventListener('click', async () => {
       body: JSON.stringify({
         title: titleInput.value.trim(),
         description: descInput.value,
-        price: priceInput.value ? parseFloat(priceInput.value) : null,
+        price_usd: priceUsdInput.value ? parseFloat(priceUsdInput.value) : null,
+        price_ves: priceVesInput.value ? parseFloat(priceVesInput.value) : null,
       }),
     });
     if (!r.ok) {

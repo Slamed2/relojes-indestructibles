@@ -138,8 +138,12 @@
         <div class="panel">
           <h2>Datos básicos</h2>
           <div class="field">
-            <label>Precio (ARS)</label>
-            <input id="price" type="number" step="0.01" min="0" placeholder="ej. 25000.00" />
+            <label>Precio en USD</label>
+            <input id="price_usd" type="number" step="0.01" min="0" placeholder="ej. 25.00" />
+          </div>
+          <div class="field">
+            <label>Precio en VES (Bs.)</label>
+            <input id="price_ves" type="number" step="0.01" min="0" placeholder="ej. 1500.00" />
           </div>
           <div class="field">
             <label>Slug (auto)</label>
@@ -148,11 +152,11 @@
         </div>
 
         <div class="panel" style="margin-top: 14px;">
-          <h2>Imágenes generales</h2>
+          <h2>Media (imágenes, video, audio)</h2>
           <div id="images-general" class="images-grid"></div>
           <label class="upload-tile" style="margin-top: 8px; height: 60px; aspect-ratio: auto;">
-            + Subir imagen general
-            <input type="file" id="upload-general" accept="image/*" />
+            + Subir imagen, video o audio
+            <input type="file" id="upload-general" accept="image/*,video/*,audio/*" />
           </label>
         </div>
       </aside>
