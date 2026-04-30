@@ -196,11 +196,11 @@ router.put('/:slug', async (req, res) => {
     const nextUsd = price_usd !== undefined ? price_usd : product.price_usd;
     let nextVes = price_ves !== undefined ? price_ves : product.price_ves;
 
-    // Si el cliente cambió USD pero no mandó VES, recalculamos VES con la tasa.
-    if (price_usd !== undefined && price_ves === undefined) {
-      const filled = await autoFillVes({ price_usd: nextUsd, price_ves: null });
-      nextVes = filled.price_ves;
-    }
+    // Si hay USD pero VES está vacío (null/undefined/""), calculamos con la
+    // tasa. autoFillVes() respeta un VES ya seteado, así que llamarlo siempre
+    // es seguro.
+    const filled = await autoFillVes({ price_usd: nextUsd, price_ves: nextVes });
+    nextVes = filled.price_ves;
 
     await upsertProduct(slug, {
       title: title ?? product.title,

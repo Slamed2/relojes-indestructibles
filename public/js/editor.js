@@ -50,10 +50,74 @@ async function load() {
     descInput.value = product.description || '';
     renderVariants();
     renderImages();
+    // Si hay USD pero no VES, prefill con la tasa actual y marcamos el campo
+    // como "auto" para que un cambio futuro de USD lo recalcule en vivo.
+    await maybeAutofillVes();
   } catch (err) {
     showToast(err.message, true);
   }
 }
+
+// === Auto-cálculo VES en vivo ===
+//
+// El VES se autocalcula a partir del USD si el campo VES está vacío. Una vez
+// el usuario tipea algo distinto en VES, lo dejamos en paz (modo "manual"
+// hasta que vacíe el campo de nuevo).
+
+let _ratePromise = null;
+function getRate() {
+  if (_ratePromise) return _ratePromise;
+  _ratePromise = fetch('/api/products/exchange-rate')
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  return _ratePromise;
+}
+
+let vesIsAuto = false; // true cuando el valor en VES lo puso el cálculo, no el usuario.
+
+async function maybeAutofillVes() {
+  const usd = parseFloat(priceUsdInput.value);
+  const vesRaw = priceVesInput.value.trim();
+  // Si el usuario ya escribió algo en VES y no es nuestro auto-fill, respetar.
+  if (vesRaw !== '' && !vesIsAuto) return;
+  if (!Number.isFinite(usd) || usd <= 0) {
+    if (vesIsAuto) { priceVesInput.value = ''; }
+    setVesHint('');
+    return;
+  }
+  const rate = await getRate();
+  if (!rate?.rate) {
+    setVesHint('sin tasa cacheada');
+    return;
+  }
+  const calc = Number((usd * rate.rate).toFixed(2));
+  priceVesInput.value = calc.toFixed(2);
+  vesIsAuto = true;
+  setVesHint(`auto · Bs. ${rate.rate} / USD`);
+}
+
+function setVesHint(text) {
+  let hint = document.getElementById('ves-hint');
+  if (!hint) {
+    hint = document.createElement('div');
+    hint.id = 'ves-hint';
+    hint.style.cssText = 'font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:8px;';
+    priceVesInput.parentElement.appendChild(hint);
+  }
+  hint.textContent = text;
+}
+
+// Recalcular VES cuando cambia USD.
+priceUsdInput.addEventListener('input', maybeAutofillVes);
+// Si el usuario tipea en VES, salimos del modo auto.
+priceVesInput.addEventListener('input', () => {
+  vesIsAuto = false;
+  setVesHint('');
+});
+// Si el usuario vacía VES, volvemos al auto.
+priceVesInput.addEventListener('blur', () => {
+  if (priceVesInput.value.trim() === '') maybeAutofillVes();
+});
 
 // Devuelve el elemento <img>/<video>/<audio> según content_type del media.
 function mediaPreview(m) {
