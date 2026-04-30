@@ -1,0 +1,15 @@
+# Dependencias
+node_modules
+
+# Secrets y entorno
+.env
+.env.*.local
+
+# Datos generados / cache
+data/tmp/
+data/thumbs/
+
+# Logs
+npm-debug.log
+.DS_Store
+.claude

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vista previa</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+    <style>
+      .preview-main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+      .toolbar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+      .toolbar input[type="search"] {
+        flex: 1;
+        padding: 10px 14px;
+        background: var(--panel-2);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 14px;
+      }
+      .stats { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+      .product-list { display: flex; flex-direction: column; gap: 10px; }
+      .product-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .product-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        cursor: pointer;
+      }
+      .product-header:hover { background: var(--panel-2); }
+      .product-header .chev {
+        width: 12px; height: 12px;
+        border-right: 2px solid var(--muted);
+        border-bottom: 2px solid var(--muted);
+        transform: rotate(-45deg);
+        transition: transform 0.15s;
+      }
+      .product-card.open .product-header .chev { transform: rotate(45deg); }
+      .product-title { flex: 1; font-weight: 500; font-size: 15px; }
+      .product-price { font-size: 13px; color: var(--primary); font-variant-numeric: tabular-nums; }
+      .product-body {
+        display: none;
+        padding: 12px 16px 16px;
+        border-top: 1px solid var(--border);
+      }
+      .product-card.open .product-body { display: block; }
+      .product-body .desc {
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+      }
+      .product-body .images {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 6px;
+        margin-top: 10px;
+      }
+      .product-body .images img {
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
+        border-radius: 4px;
+        background: var(--panel-2);
+      }
+      .variant-block {
+        background: var(--panel-2);
+        border-radius: 6px;
+        padding: 10px;
+        margin-top: 10px;
+      }
+      .variant-block h4 {
+        margin: 0 0 6px;
+        font-size: 13px;
+        color: var(--primary);
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/" class="back">← Volver</a>
+      <h1>Vista previa de productos</h1>
+      <div class="actions">
+        <button id="btn-expand" class="btn">Expandir todo</button>
+        <button id="btn-collapse" class="btn">Colapsar todo</button>
+      </div>
+    </header>
+
+    <main class="preview-main">
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Buscar producto…" />
+      </div>
+      <div class="stats" id="stats"></div>
+      <div id="list" class="product-list"></div>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const list = $('list');
+      const stats = $('stats');
+      const search = $('search');
+      let allProducts = [];
+
+      function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, (m) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        }[m]));
+      }
+
+      function fmtPrice(p) {
+        if (p == null) return '';
+        return '$' + Number(p).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function normalize(s) {
+        return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+      }
+
+      function render(products) {
+        list.innerHTML = '';
+        for (const p of products) {
+          const card = document.createElement('div');
+          card.className = 'product-card';
+          card.dataset.slug = p.slug;
+          const generalImages = p.media.filter(m => !m.variant_id);
+          const variants = p.variants.map(v => {
+            const vImgs = p.media.filter(m => m.variant_id === v.id);
+            const imgs = vImgs.map(i => `<img src="${escapeHtml(i.url)}" loading="lazy" />`).join('');
+            return `
+              <div class="variant-block">
+                <h4>${escapeHtml(v.name)}</h4>
+                ${v.description ? `<div class="desc">${escapeHtml(v.description)}</div>` : ''}
+                ${imgs ? `<div class="images">${imgs}</div>` : ''}
+              </div>`;
+          }).join('');
+          const generalImgs = generalImages.map(i => `<img src="${escapeHtml(i.url)}" loading="lazy" />`).join('');
+          card.innerHTML = `
+            <div class="product-header">
+              <span class="chev"></span>
+              <span class="product-title">${escapeHtml(p.title)}</span>
+              <span class="product-price">${fmtPrice(p.price)}</span>
+            </div>
+            <div class="product-body">
+              ${p.description ? `<div class="desc">${escapeHtml(p.description)}</div>` : ''}
+              ${generalImgs ? `<div class="images">${generalImgs}</div>` : ''}
+              ${variants}
+            </div>`;
+          list.appendChild(card);
+        }
+      }
+
+      function applyFilter() {
+        const q = normalize(search.value);
+        const filtered = !q ? allProducts : allProducts.filter(p =>
+          normalize(p.title).includes(q) || normalize(p.description||'').includes(q)
+        );
+        stats.textContent = `${filtered.length} producto${filtered.length === 1 ? '' : 's'}`;
+        render(filtered);
+      }
+
+      async function load() {
+        const r = await fetch('/api/products');
+        const data = await r.json();
+        // Para obtener detalles (variantes + imágenes) hay que ir uno por uno.
+        const detailed = await Promise.all(
+          data.products.map(p => fetch(`/api/products/${encodeURIComponent(p.slug)}`).then(r => r.json()))
+        );
+        allProducts = detailed;
+        applyFilter();
+      }
+
+      list.addEventListener('click', (ev) => {
+        const card = ev.target.closest('.product-card');
+        if (!card) return;
+        if (ev.target.closest('.product-header')) {
+          card.classList.toggle('open');
+        }
+      });
+
+      $('btn-expand').addEventListener('click', () => {
+        list.querySelectorAll('.product-card').forEach(c => c.classList.add('open'));
+      });
+      $('btn-collapse').addEventListener('click', () => {
+        list.querySelectorAll('.product-card').forEach(c => c.classList.remove('open'));
+      });
+
+      search.addEventListener('input', applyFilter);
+      load();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Editor de producto</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+    <style>
+      .editor-main {
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        gap: 18px;
+        padding: 20px;
+      }
+      @media (max-width: 900px) { .editor-main { grid-template-columns: 1fr; } }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px;
+      }
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 14px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .field { margin-bottom: 12px; }
+      .field label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .field input, .field textarea {
+        width: 100%;
+        padding: 8px 10px;
+        background: var(--panel-2);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 14px;
+      }
+      .field textarea { min-height: 200px; resize: vertical; line-height: 1.5; }
+
+      .images-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .image-tile {
+        position: relative;
+        aspect-ratio: 1;
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+      }
+      .image-tile img {
+        width: 100%; height: 100%;
+        object-fit: cover;
+      }
+      .image-tile .delete {
+        position: absolute;
+        top: 4px; right: 4px;
+        background: rgba(0,0,0,0.7);
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .upload-tile {
+        aspect-ratio: 1;
+        background: var(--panel-2);
+        border: 1px dashed var(--border);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .upload-tile:hover { border-color: var(--primary); color: var(--primary); }
+      .upload-tile input { display: none; }
+
+      .variant-card {
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
+      }
+      .variant-card .field { margin-bottom: 8px; }
+      .variant-card .field input,
+      .variant-card .field textarea { font-size: 13px; }
+
+      .variant-actions {
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+        margin-top: 8px;
+      }
+      .variant-actions .btn { padding: 4px 10px; font-size: 12px; }
+
+      .toolbar-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .save-status {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .save-status.saved { color: #4ade80; }
+      .save-status.err { color: var(--danger); }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/" class="back">← Volver</a>
+      <input id="title" class="title-input" placeholder="Título del producto" />
+      <div class="toolbar-actions">
+        <span id="status" class="save-status"></span>
+        <button id="btn-delete" class="btn btn-danger">Eliminar</button>
+        <button id="btn-save" class="btn btn-primary">Guardar</button>
+      </div>
+    </header>
+
+    <main class="editor-main">
+      <aside>
+        <div class="panel">
+          <h2>Datos básicos</h2>
+          <div class="field">
+            <label>Precio (ARS)</label>
+            <input id="price" type="number" step="0.01" min="0" placeholder="ej. 25000.00" />
+          </div>
+          <div class="field">
+            <label>Slug (auto)</label>
+            <input id="slug" type="text" disabled />
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top: 14px;">
+          <h2>Imágenes generales</h2>
+          <div id="images-general" class="images-grid"></div>
+          <label class="upload-tile" style="margin-top: 8px; height: 60px; aspect-ratio: auto;">
+            + Subir imagen general
+            <input type="file" id="upload-general" accept="image/*" />
+          </label>
+        </div>
+      </aside>
+
+      <section>
+        <div class="panel">
+          <h2>Descripción</h2>
+          <div class="field">
+            <textarea id="description" placeholder="Detalles del producto, características, beneficios..."></textarea>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top: 14px;">
+          <h2>Variantes / Modelos</h2>
+          <div id="variants"></div>
+          <button id="btn-add-variant" class="btn">+ Agregar variante</button>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="/js/editor.js"></script>
+  </body>
+</html>
